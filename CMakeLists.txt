@@ -32,4 +32,5 @@ target_sources(ZYRIN PRIVATE
 target_link_libraries(ZYRIN PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
+    juce::juce_dsp
 )

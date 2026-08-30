@@ -2,9 +2,60 @@
 #include "PluginEditor.h"
 #include <cmath>
 
+juce::AudioProcessorValueTreeState::ParameterLayout ZyrinProcessor::createParameterLayout() {
+    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID("loopLength", 1), "Loop Length",
+        juce::StringArray{"1/16", "1/8", "1/4", "1/2", "1 Bar", "2 Bars", "4 Bars", "8 Bars"}, 4));
+
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID("mode", 1), "Mode",
+        juce::StringArray{"1.5x", "2x", "4x"}, 1));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("smooth", 1), "Smooth",
+        juce::NormalisableRange<float>(5.0f, 50.0f, 0.1f), 20.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("bandLow", 1), "Band Low",
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.3f), 20.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("bandHigh", 1), "Band High",
+        juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.3f), 20000.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("mix", 1), "Mix",
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID("bypass", 1), "Bypass", false));
+
+    return { params.begin(), params.end() };
+}
+
 ZyrinProcessor::ZyrinProcessor()
      : AudioProcessor (BusesProperties().withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)) {}
+                                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+       apvts(*this, nullptr, "Parameters", createParameterLayout())
+{
+    loopLengthParam = apvts.getRawParameterValue("loopLength");
+    modeParam = apvts.getRawParameterValue("mode");
+    smoothParam = apvts.getRawParameterValue("smooth");
+    bandLowParam = apvts.getRawParameterValue("bandLow");
+    bandHighParam = apvts.getRawParameterValue("bandHigh");
+    mixParam = apvts.getRawParameterValue("mix");
+    bypassParam = apvts.getRawParameterValue("bypass");
+
+    for (int i = 0; i < 2; ++i) {
+        lp1[i].setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
+        hp1[i].setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+        lp2[i].setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
+        hp2[i].setType(juce::dsp::LinkwitzRileyFilterType::highpass);
+        ap1[i].setType(juce::dsp::LinkwitzRileyFilterType::allpass);
+    }
+}
 
 ZyrinProcessor::~ZyrinProcessor() {}
 
@@ -14,6 +65,25 @@ void ZyrinProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     circularBuffer.setSize(getTotalNumInputChannels(), bufferLength);
     circularBuffer.clear();
     writePosition = 0;
+
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = samplesPerBlock;
+    spec.numChannels = 1;
+
+    for (int i = 0; i < 2; ++i) {
+        lp1[i].prepare(spec);
+        hp1[i].prepare(spec);
+        lp2[i].prepare(spec);
+        hp2[i].prepare(spec);
+        ap1[i].prepare(spec);
+        
+        lp1[i].reset();
+        hp1[i].reset();
+        lp2[i].reset();
+        hp2[i].reset();
+        ap1[i].reset();
+    }
 }
 
 void ZyrinProcessor::releaseResources() {
@@ -25,12 +95,41 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // limpa canais vazios para evitar barulhos passivos
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
     double sampleRate = getSampleRate();
     if (sampleRate <= 0.0) return;
+
+    // Load Parameters
+    int loopLengthChoice = static_cast<int>(loopLengthParam->load());
+    int modeChoice = static_cast<int>(modeParam->load());
+    float smoothMs = smoothParam->load();
+    float lowCutoff = bandLowParam->load();
+    float highCutoff = bandHighParam->load();
+    float mix = mixParam->load();
+    bool bypass = bypassParam->load() > 0.5f;
+
+    if (lowCutoff > highCutoff) std::swap(lowCutoff, highCutoff);
+    
+    float fadeDelta = 1.0f / (0.02f * sampleRate); // 20ms fade
+
+    for (int i = 0; i < 2; ++i) {
+        lp1[i].setCutoffFrequency(lowCutoff);
+        hp1[i].setCutoffFrequency(lowCutoff);
+        lp2[i].setCutoffFrequency(highCutoff);
+        hp2[i].setCutoffFrequency(highCutoff);
+        ap1[i].setCutoffFrequency(highCutoff);
+    }
+
+    // Map loopLengthChoice (0-7) to beats (0.25 to 32.0)
+    loopLengthBeats = 0.25 * std::pow(2.0, loopLengthChoice);
+
+    // Map modeChoice (0,1,2) to speed (1.5x, 2x, 4x)
+    double speed = (modeChoice == 0) ? (2.0 / 3.0) : (modeChoice == 1 ? 0.5 : 0.25);
+    double delayRatio = 1.0 - speed;
+
+    double fadeSamples = smoothMs * 0.001 * sampleRate;
 
     // Get Transport info
     auto playHead = getPlayHead();
@@ -49,48 +148,74 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     int numSamples = buffer.getNumSamples();
     int bufferLength = circularBuffer.getNumSamples();
     double beatsPerSample = currentBpm / (60.0 * sampleRate);
+    double fadeBeats = fadeSamples * beatsPerSample;
 
-    // If buffer is empty/invalid, skip
     if (bufferLength == 0) return;
 
     for (int sample = 0; sample < numSamples; ++sample) {
-        // Calculate the exact PPQ position for this sample
+        if (isPlaying && !bypass) {
+            transportFade += fadeDelta;
+        } else {
+            transportFade -= fadeDelta;
+        }
+        transportFade = juce::jlimit(0.0f, 1.0f, transportFade);
+
         double samplePpq = ppqPosition + (isPlaying ? (sample * beatsPerSample) : 0.0);
         
-        // Loop phase (0.0 to loopLengthBeats)
         double loopPhase = std::fmod(samplePpq, loopLengthBeats);
         if (loopPhase < 0.0) loopPhase += loopLengthBeats;
         
-        // Delay distance in beats is exactly half the loop phase.
-        // This ensures the read pointer moves at 0.5x speed.
-        double delayBeats = loopPhase * 0.5;
-        double delaySamples = delayBeats / beatsPerSample;
+        double delayBeatsNew = loopPhase * delayRatio;
+        double delayBeatsOld = (loopPhase + loopLengthBeats) * delayRatio;
         
+        double delaySamplesNew = delayBeatsNew / beatsPerSample;
+        double delaySamplesOld = delayBeatsOld / beatsPerSample;
+
+        float fade = 1.0f;
+        if (loopPhase < fadeBeats && fadeBeats > 0.0) {
+            fade = static_cast<float>(loopPhase / fadeBeats);
+        }
+
         for (int channel = 0; channel < totalNumInputChannels; ++channel) {
             auto* inputData = buffer.getReadPointer(channel);
             auto* outputData = buffer.getWritePointer(channel);
             auto* circularData = circularBuffer.getWritePointer(channel);
             
-            // Write current sample to circular buffer
-            circularData[writePosition] = inputData[sample];
+            float inputSample = inputData[sample];
+
+            // Band Split
+            float low = lp1[channel].processSample(0, inputSample);
+            float midHigh = hp1[channel].processSample(0, inputSample);
+            float mid = lp2[channel].processSample(0, midHigh);
+            float high = hp2[channel].processSample(0, midHigh);
             
-            // Calculate read position
-            double readPosition = writePosition - delaySamples;
-            while (readPosition < 0.0) readPosition += bufferLength;
-            while (readPosition >= bufferLength) readPosition -= bufferLength;
+            float lowAligned = ap1[channel].processSample(0, low);
             
-            // Linear Interpolation
-            int index1 = static_cast<int>(std::floor(readPosition));
-            int index2 = (index1 + 1) % bufferLength;
-            double fraction = readPosition - index1;
+            // Write 'mid' band to circular buffer
+            circularData[writePosition] = mid;
             
-            float interpolatedSample = circularData[index1] * (1.0f - fraction) + circularData[index2] * fraction;
-            
-            // Output
-            outputData[sample] = interpolatedSample;
+            // Read new loop
+            auto getInterpolated = [&](double dSamples) {
+                double readPosition = writePosition - dSamples;
+                while (readPosition < 0.0) readPosition += bufferLength;
+                while (readPosition >= bufferLength) readPosition -= bufferLength;
+                
+                int index1 = static_cast<int>(std::floor(readPosition));
+                int index2 = (index1 + 1) % bufferLength;
+                double fraction = readPosition - index1;
+                
+                return circularData[index1] * (1.0f - fraction) + circularData[index2] * fraction;
+            };
+
+            float newRead = getInterpolated(delaySamplesNew);
+            float oldRead = getInterpolated(delaySamplesOld);
+
+            float stretchedMid = fade * newRead + (1.0f - fade) * oldRead;
+            float wetSample = lowAligned + stretchedMid + high;
+
+            float effectiveMix = mix * transportFade;
+            outputData[sample] = inputSample * (1.0f - effectiveMix) + wetSample * effectiveMix;
         }
-        
-        // Advance write pointer
         writePosition = (writePosition + 1) % bufferLength;
     }
 }

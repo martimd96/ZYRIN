@@ -12,5 +12,22 @@ public:
 
 private:
     ZyrinProcessor& audioProcessor;
+    
+    juce::ComboBox loopLengthBox;
+    juce::ComboBox modeBox;
+    juce::Slider smoothSlider;
+    juce::Slider bandLowSlider;
+    juce::Slider bandHighSlider;
+    juce::Slider mixSlider;
+    juce::ToggleButton bypassButton;
+    
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> loopLengthAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> smoothAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bandLowAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bandHighAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ZyrinEditor)
 };

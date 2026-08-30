@@ -3,22 +3,63 @@
 
 ZyrinEditor::ZyrinEditor (ZyrinProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p) {
-    // define o tamanho base da interface grafica
-    setSize (400, 300);
+    
+    addAndMakeVisible(loopLengthBox);
+    loopLengthBox.addItemList({"1/16", "1/8", "1/4", "1/2", "1 Bar", "2 Bars", "4 Bars", "8 Bars"}, 1);
+    loopLengthAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.apvts, "loopLength", loopLengthBox);
+
+    addAndMakeVisible(modeBox);
+    modeBox.addItemList({"1.5x", "2x", "4x"}, 1);
+    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.apvts, "mode", modeBox);
+
+    addAndMakeVisible(smoothSlider);
+    smoothSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    smoothAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "smooth", smoothSlider);
+
+    addAndMakeVisible(bandLowSlider);
+    bandLowSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    bandLowAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "bandLow", bandLowSlider);
+
+    addAndMakeVisible(bandHighSlider);
+    bandHighSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    bandHighAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "bandHigh", bandHighSlider);
+
+    addAndMakeVisible(mixSlider);
+    mixSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    mixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "mix", mixSlider);
+
+    addAndMakeVisible(bypassButton);
+    bypassButton.setButtonText("Bypass");
+    bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "bypass", bypassButton);
+
+    setSize (400, 330);
 }
 
 ZyrinEditor::~ZyrinEditor() {}
 
 void ZyrinEditor::paint (juce::Graphics& g) {
-    // pinta o fundo de preto
     g.fillAll (juce::Colours::black);
     
-    // escreve zyrin a branco bem no centro do plugin
     g.setColour (juce::Colours::white);
-    g.setFont (40.0f);
-    g.drawFittedText ("ZYRIN", getLocalBounds(), juce::Justification::centred, 1);
+    g.setFont (20.0f);
+    g.drawText ("ZYRIN - TEST UI", getLocalBounds().removeFromTop(40), juce::Justification::centred, 1);
+    
+    g.setFont(12.0f);
+    g.drawText("Loop", 10, 50, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Mode", 10, 80, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Smooth", 10, 110, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Low", 10, 140, 80, 20, juce::Justification::centredLeft);
+    g.drawText("High", 10, 170, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Mix", 10, 200, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Bypass", 10, 230, 80, 20, juce::Justification::centredLeft);
 }
 
 void ZyrinEditor::resized() {
-    // aqui vao ser posicionados os knobs e botoes
+    loopLengthBox.setBounds(100, 50, 280, 20);
+    modeBox.setBounds(100, 80, 280, 20);
+    smoothSlider.setBounds(100, 110, 280, 20);
+    bandLowSlider.setBounds(100, 140, 280, 20);
+    bandHighSlider.setBounds(100, 170, 280, 20);
+    mixSlider.setBounds(100, 200, 280, 20);
+    bypassButton.setBounds(100, 230, 280, 20);
 }

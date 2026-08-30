@@ -44,7 +44,11 @@ ZyrinEditor::ZyrinEditor (ZyrinProcessor& p)
     reverseModeBox.addItemList({"Off", "Synced", "Instant"}, 1);
     reverseModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.apvts, "reverseMode", reverseModeBox);
 
-    setSize (400, 420);
+    addAndMakeVisible(driveSlider);
+    driveSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    driveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "drive", driveSlider);
+
+    setSize (400, 450);
 }
 
 ZyrinEditor::~ZyrinEditor() {}
@@ -67,6 +71,7 @@ void ZyrinEditor::paint (juce::Graphics& g) {
     g.drawText("Grain", 10, 260, 80, 20, juce::Justification::centredLeft);
     g.drawText("Bypass", 10, 290, 80, 20, juce::Justification::centredLeft);
     g.drawText("Reverse", 10, 320, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Drive", 10, 350, 80, 20, juce::Justification::centredLeft);
 }
 
 void ZyrinEditor::resized() {
@@ -80,4 +85,5 @@ void ZyrinEditor::resized() {
     grainSlider.setBounds(100, 260, 280, 20);
     bypassButton.setBounds(100, 290, 280, 20);
     reverseModeBox.setBounds(100, 320, 280, 20);
+    driveSlider.setBounds(100, 350, 280, 20);
 }

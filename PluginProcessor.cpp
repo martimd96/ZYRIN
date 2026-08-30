@@ -44,6 +44,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout ZyrinProcessor::createParame
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID("bypass", 1), "Bypass", false));
 
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("drive", 1), "Drive",
+        juce::NormalisableRange<float>(1.0f, 5.0f, 0.01f), 1.0f));
+
     return { params.begin(), params.end() };
 }
 
@@ -62,6 +66,7 @@ ZyrinProcessor::ZyrinProcessor()
     grainParam = apvts.getRawParameterValue("grainSize");
     bypassParam = apvts.getRawParameterValue("bypass");
     reverseModeParam = apvts.getRawParameterValue("reverseMode");
+    driveParam = apvts.getRawParameterValue("drive");
 
     for (int i = 0; i < 2; ++i) {
         lp1[i].setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
@@ -140,6 +145,7 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     float grainSizeMs = grainParam->load();
     bool bypass = bypassParam->load() > 0.5f;
     int reverseModeChoice = static_cast<int>(reverseModeParam->load());
+    float drive = driveParam->load();
 
     if (lowCutoff > highCutoff) std::swap(lowCutoff, highCutoff);
     
@@ -186,6 +192,8 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     float R = std::pow(2.0f, pitchShiftSemitones / 12.0f);
     double delayDelta = 1.0 - R;
     smoothedGrainSize.setTargetValue(grainSizeMs);
+
+    float driveCompensation = 1.0f / (1.0f + (drive - 1.0f) * 0.15f);
 
     for (int sample = 0; sample < numSamples; ++sample) {
         
@@ -320,6 +328,10 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             }
 
             float wetSample = lowAligned + shiftedMid + high;
+
+            wetSample *= drive;
+            wetSample = std::tanh(wetSample);
+            wetSample *= driveCompensation;
 
             float effectiveMix = mix * transportFade;
             outputData[sample] = inputSample * (1.0f - effectiveMix) + wetSample * effectiveMix;

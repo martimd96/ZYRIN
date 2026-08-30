@@ -23,6 +23,7 @@ private:
     juce::Slider grainSlider;
     juce::ToggleButton bypassButton;
     juce::ComboBox reverseModeBox;
+    juce::Slider driveSlider;
     
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> loopLengthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttachment;
@@ -34,6 +35,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> grainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> reverseModeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> driveAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ZyrinEditor)
 };

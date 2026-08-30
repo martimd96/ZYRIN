@@ -46,6 +46,7 @@ private:
     std::atomic<float>* grainParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
     std::atomic<float>* reverseModeParam = nullptr;
+    std::atomic<float>* driveParam = nullptr;
 
     // Filters for crossover
     juce::dsp::LinkwitzRileyFilter<float> lp1[2], hp1[2]; // Cutoff at bandLow

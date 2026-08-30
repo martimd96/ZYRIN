@@ -1,0 +1,29 @@
+# Build and CMake
+build/
+out/
+bin/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+*.ninja
+
+# IDEs
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln
+*.xcodeproj/
+*.xcworkspace/
+
+# JUCE specific
+JuceLibraryCode/
+
+# Binaries
+*.dll
+*.exe
+*.vst3
+*.component
+*.aaxplugin

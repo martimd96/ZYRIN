@@ -24,6 +24,8 @@ private:
     juce::ToggleButton bypassButton;
     juce::ComboBox reverseModeBox;
     juce::Slider driveSlider;
+    juce::Slider bypassFadeInSlider;
+    juce::Slider bypassFadeOutSlider;
     
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> loopLengthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAttachment;
@@ -36,6 +38,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> reverseModeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> driveAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bypassFadeInAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bypassFadeOutAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ZyrinEditor)
 };

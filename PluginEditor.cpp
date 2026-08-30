@@ -48,7 +48,15 @@ ZyrinEditor::ZyrinEditor (ZyrinProcessor& p)
     driveSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     driveAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "drive", driveSlider);
 
-    setSize (400, 450);
+    addAndMakeVisible(bypassFadeInSlider);
+    bypassFadeInSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    bypassFadeInAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "bypassFadeIn", bypassFadeInSlider);
+
+    addAndMakeVisible(bypassFadeOutSlider);
+    bypassFadeOutSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    bypassFadeOutAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "bypassFadeOut", bypassFadeOutSlider);
+
+    setSize (400, 500);
 }
 
 ZyrinEditor::~ZyrinEditor() {}
@@ -72,6 +80,8 @@ void ZyrinEditor::paint (juce::Graphics& g) {
     g.drawText("Bypass", 10, 290, 80, 20, juce::Justification::centredLeft);
     g.drawText("Reverse", 10, 320, 80, 20, juce::Justification::centredLeft);
     g.drawText("Drive", 10, 350, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Fade In", 10, 380, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Fade Out", 10, 410, 80, 20, juce::Justification::centredLeft);
 }
 
 void ZyrinEditor::resized() {
@@ -86,4 +96,6 @@ void ZyrinEditor::resized() {
     bypassButton.setBounds(100, 290, 280, 20);
     reverseModeBox.setBounds(100, 320, 280, 20);
     driveSlider.setBounds(100, 350, 280, 20);
+    bypassFadeInSlider.setBounds(100, 380, 280, 20);
+    bypassFadeOutSlider.setBounds(100, 410, 280, 20);
 }

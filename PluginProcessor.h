@@ -47,6 +47,8 @@ private:
     std::atomic<float>* bypassParam = nullptr;
     std::atomic<float>* reverseModeParam = nullptr;
     std::atomic<float>* driveParam = nullptr;
+    std::atomic<float>* bypassFadeInParam = nullptr;
+    std::atomic<float>* bypassFadeOutParam = nullptr;
 
     // Filters for crossover
     juce::dsp::LinkwitzRileyFilter<float> lp1[2], hp1[2]; // Cutoff at bandLow
@@ -60,7 +62,13 @@ private:
     juce::AudioBuffer<float> pitchBuffer;
     int pitchWritePos = 0;
     double pitchDelayAccum = 0.0;
+    
     juce::SmoothedValue<float> smoothedGrainSize;
+    juce::SmoothedValue<float> smoothedMix;
+    juce::SmoothedValue<float> smoothedDrive;
+    juce::SmoothedValue<float> smoothedPitchShift;
+    juce::SmoothedValue<float> smoothedBandLow;
+    juce::SmoothedValue<float> smoothedBandHigh;
 
     bool wasInstant = false;
     double instantDelaySamples = 0.0;

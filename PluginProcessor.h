@@ -42,6 +42,8 @@ private:
     std::atomic<float>* bandLowParam = nullptr;
     std::atomic<float>* bandHighParam = nullptr;
     std::atomic<float>* mixParam = nullptr;
+    std::atomic<float>* pitchParam = nullptr;
+    std::atomic<float>* grainParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
 
     // Filters for crossover
@@ -51,6 +53,12 @@ private:
     
     float previousSmoothVal = 0.0f; // To track smooth parameter changes if needed, or we just calculate on the fly
     float transportFade = 1.0f; // Smoothes transport start/stop and bypass
+
+    // pitch shifter variables
+    juce::AudioBuffer<float> pitchBuffer;
+    int pitchWritePos = 0;
+    double pitchDelayAccum = 0.0;
+    juce::SmoothedValue<float> smoothedGrainSize;
 
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 

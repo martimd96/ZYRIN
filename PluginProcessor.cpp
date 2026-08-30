@@ -29,6 +29,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout ZyrinProcessor::createParame
         juce::ParameterID("mix", 1), "Mix",
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 1.0f));
 
+    params.push_back(std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID("pitchShift", 1), "Pitch Shift",
+        -12, 12, 0));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("grainSize", 1), "Grain Size",
+        juce::NormalisableRange<float>(10.0f, 120.0f, 1.0f), 60.0f));
+
     params.push_back(std::make_unique<juce::AudioParameterBool>(
         juce::ParameterID("bypass", 1), "Bypass", false));
 
@@ -46,6 +54,8 @@ ZyrinProcessor::ZyrinProcessor()
     bandLowParam = apvts.getRawParameterValue("bandLow");
     bandHighParam = apvts.getRawParameterValue("bandHigh");
     mixParam = apvts.getRawParameterValue("mix");
+    pitchParam = apvts.getRawParameterValue("pitchShift");
+    grainParam = apvts.getRawParameterValue("grainSize");
     bypassParam = apvts.getRawParameterValue("bypass");
 
     for (int i = 0; i < 2; ++i) {
@@ -84,6 +94,16 @@ void ZyrinProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
         hp2[i].reset();
         ap1[i].reset();
     }
+    
+    // pitch shifter buffer for maximum 120ms grain window
+    double maxWindowSamples = 0.12 * sampleRate;
+    pitchBuffer.setSize(getTotalNumInputChannels(), static_cast<int>(maxWindowSamples) + 100);
+    pitchBuffer.clear();
+    pitchWritePos = 0;
+    pitchDelayAccum = 0.0;
+    
+    smoothedGrainSize.reset(sampleRate, 0.05);
+    smoothedGrainSize.setCurrentAndTargetValue(grainParam->load());
 }
 
 void ZyrinProcessor::releaseResources() {
@@ -108,6 +128,8 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     float lowCutoff = bandLowParam->load();
     float highCutoff = bandHighParam->load();
     float mix = mixParam->load();
+    float pitchShiftSemitones = pitchParam->load();
+    float grainSizeMs = grainParam->load();
     bool bypass = bypassParam->load() > 0.5f;
 
     if (lowCutoff > highCutoff) std::swap(lowCutoff, highCutoff);
@@ -125,8 +147,8 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     // Map loopLengthChoice (0-7) to beats (0.25 to 32.0)
     loopLengthBeats = 0.25 * std::pow(2.0, loopLengthChoice);
 
-    // Map modeChoice (0,1,2) to speed (1.5x, 2x, 4x)
-    double speed = (modeChoice == 0) ? (2.0 / 3.0) : (modeChoice == 1 ? 0.5 : 0.25);
+    // map modeChoice to speed where 1.5x uses 0.75 for musical jumps and perfect fifth harmony
+    double speed = (modeChoice == 0) ? 0.75 : (modeChoice == 1 ? 0.5 : 0.25);
     double delayRatio = 1.0 - speed;
 
     double fadeSamples = smoothMs * 0.001 * sampleRate;
@@ -151,8 +173,34 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     double fadeBeats = fadeSamples * beatsPerSample;
 
     if (bufferLength == 0) return;
+    
+    float R = std::pow(2.0f, pitchShiftSemitones / 12.0f);
+    double delayDelta = 1.0 - R;
+    smoothedGrainSize.setTargetValue(grainSizeMs);
 
     for (int sample = 0; sample < numSamples; ++sample) {
+        
+        // update pitch shift phase dynamically handles grain size shrinking
+        double currentGrainSizeMs = smoothedGrainSize.getNextValue();
+        double pitchWindowSamples = currentGrainSizeMs * 0.001 * sampleRate;
+        
+        pitchDelayAccum += delayDelta;
+        while (pitchDelayAccum >= pitchWindowSamples) pitchDelayAccum -= pitchWindowSamples;
+        while (pitchDelayAccum < 0.0) pitchDelayAccum += pitchWindowSamples;
+
+        double delay1 = pitchDelayAccum;
+        double delay2 = pitchDelayAccum + pitchWindowSamples * 0.5;
+        if (delay2 >= pitchWindowSamples) delay2 -= pitchWindowSamples;
+
+        auto getHannWindow = [](double p) {
+            return 0.5 * (1.0 - std::cos(juce::MathConstants<double>::twoPi * p));
+        };
+        
+        double p1 = delay1 / pitchWindowSamples;
+        double p2 = delay2 / pitchWindowSamples;
+        double w1 = getHannWindow(p1);
+        double w2 = getHannWindow(p2);
+
         if (isPlaying && !bypass) {
             transportFade += fadeDelta;
         } else {
@@ -211,12 +259,36 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             float oldRead = getInterpolated(delaySamplesOld);
 
             float stretchedMid = fade * newRead + (1.0f - fade) * oldRead;
-            float wetSample = lowAligned + stretchedMid + high;
+            
+            // Apply Pitch Shift to stretchedMid
+            float shiftedMid = stretchedMid;
+            if (pitchShiftSemitones != 0.0f) {
+                auto* pitchData = pitchBuffer.getWritePointer(channel);
+                pitchData[pitchWritePos] = stretchedMid;
+                
+                auto getPitchInterpolated = [&](double delay) {
+                    int len = pitchBuffer.getNumSamples();
+                    double rPos = pitchWritePos - delay - 1.0;
+                    while (rPos < 0.0) rPos += len;
+                    while (rPos >= len) rPos -= len;
+                    
+                    int idx1 = static_cast<int>(std::floor(rPos));
+                    int idx2 = (idx1 + 1) % len;
+                    double frac = rPos - idx1;
+                    
+                    return pitchData[idx1] * (1.0f - frac) + pitchData[idx2] * frac;
+                };
+                
+                shiftedMid = static_cast<float>(getPitchInterpolated(delay1) * w1 + getPitchInterpolated(delay2) * w2);
+            }
+
+            float wetSample = lowAligned + shiftedMid + high;
 
             float effectiveMix = mix * transportFade;
             outputData[sample] = inputSample * (1.0f - effectiveMix) + wetSample * effectiveMix;
         }
         writePosition = (writePosition + 1) % bufferLength;
+        pitchWritePos = (pitchWritePos + 1) % pitchBuffer.getNumSamples();
     }
 }
 

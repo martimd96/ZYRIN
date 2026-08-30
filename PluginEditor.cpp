@@ -28,11 +28,19 @@ ZyrinEditor::ZyrinEditor (ZyrinProcessor& p)
     mixSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     mixAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "mix", mixSlider);
 
+    addAndMakeVisible(pitchSlider);
+    pitchSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    pitchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "pitchShift", pitchSlider);
+
+    addAndMakeVisible(grainSlider);
+    grainSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    grainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(audioProcessor.apvts, "grainSize", grainSlider);
+
     addAndMakeVisible(bypassButton);
     bypassButton.setButtonText("Bypass");
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "bypass", bypassButton);
 
-    setSize (400, 330);
+    setSize (400, 390);
 }
 
 ZyrinEditor::~ZyrinEditor() {}
@@ -51,7 +59,9 @@ void ZyrinEditor::paint (juce::Graphics& g) {
     g.drawText("Low", 10, 140, 80, 20, juce::Justification::centredLeft);
     g.drawText("High", 10, 170, 80, 20, juce::Justification::centredLeft);
     g.drawText("Mix", 10, 200, 80, 20, juce::Justification::centredLeft);
-    g.drawText("Bypass", 10, 230, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Pitch", 10, 230, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Grain", 10, 260, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Bypass", 10, 290, 80, 20, juce::Justification::centredLeft);
 }
 
 void ZyrinEditor::resized() {
@@ -61,5 +71,7 @@ void ZyrinEditor::resized() {
     bandLowSlider.setBounds(100, 140, 280, 20);
     bandHighSlider.setBounds(100, 170, 280, 20);
     mixSlider.setBounds(100, 200, 280, 20);
-    bypassButton.setBounds(100, 230, 280, 20);
+    pitchSlider.setBounds(100, 230, 280, 20);
+    grainSlider.setBounds(100, 260, 280, 20);
+    bypassButton.setBounds(100, 290, 280, 20);
 }

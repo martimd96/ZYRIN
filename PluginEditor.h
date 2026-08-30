@@ -19,6 +19,8 @@ private:
     juce::Slider bandLowSlider;
     juce::Slider bandHighSlider;
     juce::Slider mixSlider;
+    juce::Slider pitchSlider;
+    juce::Slider grainSlider;
     juce::ToggleButton bypassButton;
     
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> loopLengthAttachment;
@@ -27,6 +29,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bandLowAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bandHighAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> mixAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pitchAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> grainAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ZyrinEditor)

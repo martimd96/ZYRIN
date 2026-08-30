@@ -45,6 +45,7 @@ private:
     std::atomic<float>* pitchParam = nullptr;
     std::atomic<float>* grainParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
+    std::atomic<float>* reverseModeParam = nullptr;
 
     // Filters for crossover
     juce::dsp::LinkwitzRileyFilter<float> lp1[2], hp1[2]; // Cutoff at bandLow
@@ -59,6 +60,9 @@ private:
     int pitchWritePos = 0;
     double pitchDelayAccum = 0.0;
     juce::SmoothedValue<float> smoothedGrainSize;
+
+    bool wasInstant = false;
+    double instantDelaySamples = 0.0;
 
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 

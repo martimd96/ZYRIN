@@ -40,7 +40,11 @@ ZyrinEditor::ZyrinEditor (ZyrinProcessor& p)
     bypassButton.setButtonText("Bypass");
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "bypass", bypassButton);
 
-    setSize (400, 390);
+    addAndMakeVisible(reverseModeBox);
+    reverseModeBox.addItemList({"Off", "Synced", "Instant"}, 1);
+    reverseModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(audioProcessor.apvts, "reverseMode", reverseModeBox);
+
+    setSize (400, 420);
 }
 
 ZyrinEditor::~ZyrinEditor() {}
@@ -62,6 +66,7 @@ void ZyrinEditor::paint (juce::Graphics& g) {
     g.drawText("Pitch", 10, 230, 80, 20, juce::Justification::centredLeft);
     g.drawText("Grain", 10, 260, 80, 20, juce::Justification::centredLeft);
     g.drawText("Bypass", 10, 290, 80, 20, juce::Justification::centredLeft);
+    g.drawText("Reverse", 10, 320, 80, 20, juce::Justification::centredLeft);
 }
 
 void ZyrinEditor::resized() {
@@ -74,4 +79,5 @@ void ZyrinEditor::resized() {
     pitchSlider.setBounds(100, 230, 280, 20);
     grainSlider.setBounds(100, 260, 280, 20);
     bypassButton.setBounds(100, 290, 280, 20);
+    reverseModeBox.setBounds(100, 320, 280, 20);
 }

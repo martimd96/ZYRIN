@@ -13,6 +13,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout ZyrinProcessor::createParame
         juce::ParameterID("mode", 1), "Mode",
         juce::StringArray{"1.5x", "2x", "4x"}, 1));
 
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID("reverseMode", 1), "Reverse Mode",
+        juce::StringArray{"Off", "Synced", "Instant"}, 0));
+
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("smooth", 1), "Smooth",
         juce::NormalisableRange<float>(5.0f, 50.0f, 0.1f), 20.0f));
@@ -57,6 +61,7 @@ ZyrinProcessor::ZyrinProcessor()
     pitchParam = apvts.getRawParameterValue("pitchShift");
     grainParam = apvts.getRawParameterValue("grainSize");
     bypassParam = apvts.getRawParameterValue("bypass");
+    reverseModeParam = apvts.getRawParameterValue("reverseMode");
 
     for (int i = 0; i < 2; ++i) {
         lp1[i].setType(juce::dsp::LinkwitzRileyFilterType::lowpass);
@@ -104,6 +109,9 @@ void ZyrinProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     
     smoothedGrainSize.reset(sampleRate, 0.05);
     smoothedGrainSize.setCurrentAndTargetValue(grainParam->load());
+    
+    wasInstant = false;
+    instantDelaySamples = 0.0;
 }
 
 void ZyrinProcessor::releaseResources() {
@@ -131,6 +139,7 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     float pitchShiftSemitones = pitchParam->load();
     float grainSizeMs = grainParam->load();
     bool bypass = bypassParam->load() > 0.5f;
+    int reverseModeChoice = static_cast<int>(reverseModeParam->load());
 
     if (lowCutoff > highCutoff) std::swap(lowCutoff, highCutoff);
     
@@ -213,11 +222,39 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         double loopPhase = std::fmod(samplePpq, loopLengthBeats);
         if (loopPhase < 0.0) loopPhase += loopLengthBeats;
         
-        double delayBeatsNew = loopPhase * delayRatio;
-        double delayBeatsOld = (loopPhase + loopLengthBeats) * delayRatio;
+        double delaySamplesNew = 0.0;
+        double delaySamplesOld = 0.0;
         
-        double delaySamplesNew = delayBeatsNew / beatsPerSample;
-        double delaySamplesOld = delayBeatsOld / beatsPerSample;
+        if (reverseModeChoice == 2) { 
+            // INSTANT MODE
+            if (!wasInstant) {
+                instantDelaySamples = (loopPhase * delayRatio) / beatsPerSample;
+                wasInstant = true;
+            }
+            instantDelaySamples += (1.0 + speed);
+            while (instantDelaySamples >= bufferLength) instantDelaySamples -= bufferLength;
+            
+            delaySamplesNew = instantDelaySamples;
+            delaySamplesOld = instantDelaySamples; 
+        } else {
+            wasInstant = false;
+            if (reverseModeChoice == 1) { 
+                // SYNCED MODE
+                double syncRatio = 1.0 + speed;
+                double delayBeatsNew = loopPhase * syncRatio;
+                double delayBeatsOld = (loopPhase + loopLengthBeats) * syncRatio;
+                
+                delaySamplesNew = delayBeatsNew / beatsPerSample;
+                delaySamplesOld = delayBeatsOld / beatsPerSample;
+            } else { 
+                // OFF MODE
+                double delayBeatsNew = loopPhase * delayRatio;
+                double delayBeatsOld = (loopPhase + loopLengthBeats) * delayRatio;
+                
+                delaySamplesNew = delayBeatsNew / beatsPerSample;
+                delaySamplesOld = delayBeatsOld / beatsPerSample;
+            }
+        }
 
         float fade = 1.0f;
         if (loopPhase < fadeBeats && fadeBeats > 0.0) {

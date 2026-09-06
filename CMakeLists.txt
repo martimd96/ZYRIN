@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(ZYRIN VERSION 1.0.0)
 
-# aponta para a pasta onde guardaste o juce
 add_subdirectory("D:/PROGRAMAS/Dev/JUCE" juce)
 
 # define as informacoes essenciais do plugin para a daw ler
@@ -12,6 +11,11 @@ juce_add_plugin(ZYRIN
     PLUGIN_CODE "Zyrn"
     FORMATS VST3 Standalone
     PRODUCT_NAME "ZYRIN"
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    VST3_CATEGORIES "Fx|Pitch Shift|Time"
 )
 
 juce_generate_juce_header(ZYRIN)

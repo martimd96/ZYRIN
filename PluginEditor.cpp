@@ -100,8 +100,18 @@ void ZyrinLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int wid
         juce::String lowText = juce::String(slider.getMinValue(), 0) + " Hz";
         juce::String highText = juce::String(slider.getMaxValue(), 0) + " Hz";
         
-        g.drawText(lowText, (int)minSliderPos - 30, (int)(trackY + trackHeight + 5.0f), 60, 15, juce::Justification::centred, false);
-        g.drawText(highText, (int)maxSliderPos - 30, (int)(trackY + trackHeight + 5.0f), 60, 15, juce::Justification::centred, false);
+        bool showLow = std::abs(slider.getMinValue() - 20.0) > 0.1;
+        bool showHigh = std::abs(slider.getMaxValue() - 20000.0) > 0.1;
+        
+        if (showLow && showHigh && (maxSliderPos - minSliderPos < 65.0f)) {
+            juce::String combinedText = juce::String(slider.getMinValue(), 0) + " - " + juce::String(slider.getMaxValue(), 0) + " Hz";
+            g.drawText(combinedText, (int)((minSliderPos + maxSliderPos) / 2.0f) - 60, (int)(trackY + trackHeight + 5.0f), 120, 15, juce::Justification::centred, false);
+        } else {
+            if (showLow)
+                g.drawText(lowText, (int)minSliderPos - 30, (int)(trackY + trackHeight + 5.0f), 60, 15, juce::Justification::centred, false);
+            if (showHigh)
+                g.drawText(highText, (int)maxSliderPos - 30, (int)(trackY + trackHeight + 5.0f), 60, 15, juce::Justification::centred, false);
+        }
     } else {
         auto trackY = (float) y + (float) height * 0.5f - 2.0f;
         auto trackHeight = 4.0f;
@@ -288,6 +298,7 @@ ZyrinEditor::ZyrinEditor (ZyrinProcessor& p)
         addAndMakeVisible(s);
         s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         s.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        s.setDoubleClickReturnValue(false, 0.0);
     };
 
     setupRotary(mixSlider);
@@ -307,6 +318,7 @@ ZyrinEditor::ZyrinEditor (ZyrinProcessor& p)
         addAndMakeVisible(s);
         s.setSliderStyle(juce::Slider::LinearHorizontal);
         s.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        s.setDoubleClickReturnValue(false, 0.0);
     };
 
     setupLinear(smoothSlider);
@@ -322,11 +334,13 @@ ZyrinEditor::ZyrinEditor (ZyrinProcessor& p)
     addAndMakeVisible(bandSlider);
     bandSlider.setSliderStyle(juce::Slider::TwoValueHorizontal);
     bandSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    bandSlider.setDoubleClickReturnValue(false, 0.0);
     bandAttachment = std::make_unique<BandAttachment>(audioProcessor.apvts, "bandLow", "bandHigh", bandSlider);
 
     // Setup Bypass Button
     addAndMakeVisible(bypassButton);
     bypassButton.setButtonText("");
+    bypassButton.toBack();
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "bypass", bypassButton);
 
     // Setup TextEditor for double-click input
@@ -377,36 +391,43 @@ ZyrinEditor::~ZyrinEditor() {
 }
 
 void ZyrinEditor::timerCallback() {
-    // Inject BPM-synced phase from processor into LookAndFeel
     customLookAndFeel.currentPulsePhase = audioProcessor.currentPulsePhase.load(std::memory_order_relaxed);
     customLookAndFeel.isDawPlaying = audioProcessor.isDawPlaying.load(std::memory_order_relaxed);
     
     float currentPhase = customLookAndFeel.currentPulsePhase;
+    float midY = smoothSlider.getBottom() + 46.0f;
+    scopeBounds = juce::Rectangle<int>(0, static_cast<int>(midY) - 50, getWidth(), 100);
     
-    // Construct dynamic oscilloscope path ONLY on beat restart to save CPU
-    // and act as a static "print" that gets revealed.
-    if (currentPhase < lastPulsePhase || scopePath.isEmpty()) {
+    if (currentPhase < lastPulsePhase || cachedScopeImage.isNull()) {
         scopePath.clear();
         int pos = audioProcessor.scopePos.load(std::memory_order_relaxed);
-        float midY = smoothSlider.getBottom() + 46.0f; // Mathematically centered in the gap
         float width = getWidth();
         
         for (int i = 0; i < audioProcessor.scopeSize; ++i) {
             int readPos = (pos + i) % audioProcessor.scopeSize;
             float val = audioProcessor.scopeData[readPos].load(std::memory_order_relaxed);
             float x = (float)i / (audioProcessor.scopeSize - 1) * width;
-            // The signal is typically between -1 and 1. Scale it for the GUI.
             float y = midY - val * 45.0f; 
             
             if (i == 0) scopePath.startNewSubPath(x, y);
             else scopePath.lineTo(x, y);
         }
+
+        if (cachedScopeImage.isNull() || cachedScopeImage.getWidth() != getWidth() || cachedScopeImage.getHeight() != getHeight()) {
+            cachedScopeImage = juce::Image(juce::Image::ARGB, getWidth(), getHeight(), true);
+        } else {
+            cachedScopeImage.clear(cachedScopeImage.getBounds(), juce::Colours::transparentBlack);
+        }
+        
+        juce::Graphics g(cachedScopeImage);
+        g.setColour(juce::Colour(0xff9d4edd).withAlpha(0.15f));
+        g.strokePath(scopePath, juce::PathStrokeType(2.0f));
     }
     
     lastPulsePhase = currentPhase;
     
-    // Repaint everything to show dynamic background and pulsing button
-    repaint();
+    repaint(scopeBounds);
+    if (!bypassBounds.isEmpty()) repaint(bypassBounds);
 }
 
 void ZyrinEditor::paint (juce::Graphics& g) {
@@ -426,8 +447,9 @@ void ZyrinEditor::paint (juce::Graphics& g) {
         g.reduceClipRegion(0, 0, (int)(getWidth() * phase), getHeight());
     }
     
-    g.setColour(juce::Colour(0xff9d4edd).withAlpha(0.15f));
-    g.strokePath(scopePath, juce::PathStrokeType(2.0f));
+    if (!cachedScopeImage.isNull()) {
+        g.drawImageAt(cachedScopeImage, 0, 0);
+    }
     g.restoreState();
     
     // Subtle auto-bypass text when DAW is stopped

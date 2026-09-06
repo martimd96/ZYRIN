@@ -90,8 +90,8 @@ ZyrinProcessor::ZyrinProcessor()
 ZyrinProcessor::~ZyrinProcessor() {}
 
 void ZyrinProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
-    // 10 seconds of buffer is enough to store 1 bar at 24 BPM
-    int bufferLength = static_cast<int>(sampleRate * 10.0); 
+    // 96 seconds of buffer is enough to store 8 bars at 20 BPM
+    int bufferLength = static_cast<int>(sampleRate * 96.0); 
     circularBuffer.setSize(getTotalNumInputChannels(), bufferLength);
     circularBuffer.clear();
     writePosition = 0;
@@ -131,8 +131,8 @@ void ZyrinProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     smoothedDrive.reset(sampleRate, 0.005);
     smoothedDrive.setCurrentAndTargetValue(driveParam->load());
     
-    smoothedPitchShift.reset(sampleRate, 0.005);
-    smoothedPitchShift.setCurrentAndTargetValue(pitchParam->load());
+    smoothedRatio.reset(sampleRate, 0.005);
+    smoothedRatio.setCurrentAndTargetValue(std::pow(2.0f, pitchParam->load() / 12.0f));
     
     smoothedBandLow.reset(sampleRate, 0.005);
     smoothedBandLow.setCurrentAndTargetValue(bandLowParam->load());
@@ -140,6 +140,12 @@ void ZyrinProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     smoothedBandHigh.reset(sampleRate, 0.005);
     smoothedBandHigh.setCurrentAndTargetValue(bandHighParam->load());
     
+    for (size_t i = 0; i < hannWindowTable.size(); ++i) {
+        double p = static_cast<double>(i) / static_cast<double>(hannWindowTable.size());
+        hannWindowTable[i] = static_cast<float>(0.5 * (1.0 - std::cos(juce::MathConstants<double>::twoPi * p)));
+    }
+    
+    currentLoopPhase = 0.0;
     wasInstant = false;
     instantDelaySamples = 0.0;
 }
@@ -174,7 +180,7 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     // set smoothed targets
     smoothedMix.setTargetValue(mixParam->load());
     smoothedDrive.setTargetValue(driveParam->load());
-    smoothedPitchShift.setTargetValue(pitchParam->load());
+    smoothedRatio.setTargetValue(std::pow(2.0f, pitchParam->load() / 12.0f));
     smoothedBandLow.setTargetValue(bandLowParam->load());
     smoothedBandHigh.setTargetValue(bandHighParam->load());
     smoothedGrainSize.setTargetValue(grainSizeMs);
@@ -234,14 +240,20 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     
     double beatsPerSample = currentBpm / (60.0 * sampleRate);
     double fadeBeats = fadeSamples * beatsPerSample;
+    
+    double loopPhase = std::fmod(ppqPosition, loopLengthBeats);
+    if (loopPhase < 0.0) loopPhase += loopLengthBeats;
 
     for (int sample = 0; sample < numSamples; ++sample) {
+        if (isPlaying && sample > 0) {
+            loopPhase += beatsPerSample;
+            if (loopPhase >= loopLengthBeats) loopPhase -= loopLengthBeats;
+        }
         
         float currentMix = smoothedMix.getNextValue();
         float currentDrive = smoothedDrive.getNextValue();
-        float currentPitchShift = smoothedPitchShift.getNextValue();
+        float R = smoothedRatio.getNextValue();
         
-        float R = std::pow(2.0f, currentPitchShift / 12.0f);
         double delayDelta = 1.0 - R;
         float driveCompensation = 1.0f / (1.0f + (currentDrive - 1.0f) * 0.15f);
 
@@ -257,8 +269,9 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         double delay2 = pitchDelayAccum + pitchWindowSamples * 0.5;
         if (delay2 >= pitchWindowSamples) delay2 -= pitchWindowSamples;
 
-        auto getHannWindow = [](double p) {
-            return 0.5 * (1.0 - std::cos(juce::MathConstants<double>::twoPi * p));
+        auto getHannWindow = [&](double p) {
+            int index = static_cast<int>(p * (hannWindowTable.size() - 1));
+            return hannWindowTable[index];
         };
         
         double p1 = delay1 / pitchWindowSamples;
@@ -273,11 +286,6 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             transportFade -= fadeOutDelta;
         }
         transportFade = juce::jlimit(0.0f, 1.0f, transportFade);
-
-        double samplePpq = ppqPosition + (isPlaying ? (sample * beatsPerSample) : 0.0);
-        
-        double loopPhase = std::fmod(samplePpq, loopLengthBeats);
-        if (loopPhase < 0.0) loopPhase += loopLengthBeats;
         
         double delaySamplesNew = 0.0;
         double delaySamplesOld = 0.0;
@@ -342,7 +350,7 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
                 while (readPosition < 0.0) readPosition += bufferLength;
                 while (readPosition >= bufferLength) readPosition -= bufferLength;
                 
-                int index1 = static_cast<int>(std::floor(readPosition));
+                int index1 = static_cast<int>(readPosition);
                 int index2 = (index1 + 1) % bufferLength;
                 double fraction = readPosition - index1;
                 
@@ -356,7 +364,7 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             
             // apply pitch shift to stretched mid
             float shiftedMid = stretchedMid;
-            if (currentPitchShift != 0.0f) {
+            if (std::abs(R - 1.0f) > 0.0001f) {
                 auto* pitchData = pitchBuffer.getWritePointer(channel);
                 pitchData[pitchWritePos] = stretchedMid;
                 
@@ -366,7 +374,7 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
                     while (rPos < 0.0) rPos += len;
                     while (rPos >= len) rPos -= len;
                     
-                    int idx1 = static_cast<int>(std::floor(rPos));
+                    int idx1 = static_cast<int>(rPos);
                     int idx2 = (idx1 + 1) % len;
                     double frac = rPos - idx1;
                     
@@ -379,11 +387,12 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             float wetSample = lowAligned + shiftedMid + high;
 
             wetSample *= currentDrive;
-            wetSample = std::tanh(wetSample);
+            wetSample = juce::dsp::FastMathApproximations::tanh(wetSample);
             wetSample *= driveCompensation;
 
+            float reconstructedDry = lowAligned + mid + high;
             float effectiveMix = currentMix * transportFade;
-            outputData[sample] = inputSample * (1.0f - effectiveMix) + wetSample * effectiveMix;
+            outputData[sample] = reconstructedDry * (1.0f - effectiveMix) + wetSample * effectiveMix;
 
             // record oscilloscope data (downsampled, left channel only)
             if (channel == 0) {

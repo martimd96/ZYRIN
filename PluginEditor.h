@@ -45,6 +45,16 @@ private:
     juce::Slider& slider;
 };
 
+class BypassButton : public juce::ToggleButton {
+public:
+    BypassButton() {}
+    bool hitTest(int x, int y) override {
+        float dx = (float)x - getWidth() * 0.5f;
+        float dy = (float)y - getHeight() * 0.5f;
+        return (dx * dx + dy * dy) <= (50.0f * 50.0f); // 50px radius hit box
+    }
+};
+
 class ZyrinEditor : public juce::AudioProcessorEditor, public juce::Timer {
 public:
     ZyrinEditor (ZyrinProcessor&);
@@ -60,8 +70,10 @@ private:
     ZyrinLookAndFeel customLookAndFeel;
     
     juce::Path scopePath;
+    juce::Image cachedScopeImage;
     float lastPulsePhase = 0.0f;
     juce::Rectangle<int> bypassBounds;
+    juce::Rectangle<int> scopeBounds;
     
     juce::TextEditor valueEditor;
     juce::Slider* currentlyEditedSlider = nullptr;
@@ -74,7 +86,7 @@ private:
     juce::Slider mixSlider;
     juce::Slider pitchSlider;
     juce::Slider grainSlider;
-    juce::ToggleButton bypassButton;
+    BypassButton bypassButton;
     juce::ComboBox reverseModeBox;
     juce::Slider driveSlider;
     juce::Slider bypassFadeInSlider;

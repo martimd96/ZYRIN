@@ -67,16 +67,19 @@ private:
     juce::SmoothedValue<float> smoothedGrainSize;
     juce::SmoothedValue<float> smoothedMix;
     juce::SmoothedValue<float> smoothedDrive;
-    juce::SmoothedValue<float> smoothedPitchShift;
+    juce::SmoothedValue<float> smoothedRatio;
     juce::SmoothedValue<float> smoothedBandLow;
     juce::SmoothedValue<float> smoothedBandHigh;
+    
+    std::array<float, 4096> hannWindowTable;
+    double currentLoopPhase = 0.0;
 
     bool wasInstant = false;
     double instantDelaySamples = 0.0;
 
 public:
     static constexpr int scopeSize = 512;
-    std::atomic<float> scopeData[512];
+    std::atomic<float> scopeData[512] {};
     std::atomic<int> scopePos { 0 };
     std::atomic<bool> isDawPlaying { false };
 private:

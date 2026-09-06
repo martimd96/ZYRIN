@@ -5,7 +5,9 @@
 // Custom LookAndFeel for futuristic dark UI
 class ZyrinLookAndFeel : public juce::LookAndFeel_V4 {
 public:
-    ZyrinLookAndFeel() {}
+    ZyrinLookAndFeel();
+
+    juce::Typeface::Ptr getTypefaceForFont (const juce::Font& font) override;
 
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
                            const float rotaryStartAngle, const float rotaryEndAngle, juce::Slider& slider) override;
@@ -18,6 +20,12 @@ public:
                            
     void drawComboBox (juce::Graphics& g, int width, int height, bool isButtonDown,
                        int buttonX, int buttonY, int buttonW, int buttonH, juce::ComboBox& box) override;
+
+    float currentPulsePhase = 0.0f;
+    bool isDawPlaying = true;
+
+private:
+    juce::Typeface::Ptr orbitronTypeface;
 };
 
 // Custom attachment to link a TwoValueHorizontal slider to two APVTS parameters
@@ -37,7 +45,7 @@ private:
     juce::Slider& slider;
 };
 
-class ZyrinEditor : public juce::AudioProcessorEditor {
+class ZyrinEditor : public juce::AudioProcessorEditor, public juce::Timer {
 public:
     ZyrinEditor (ZyrinProcessor&);
     ~ZyrinEditor() override;
@@ -45,10 +53,15 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDoubleClick (const juce::MouseEvent& event) override;
+    void timerCallback() override;
 
 private:
     ZyrinProcessor& audioProcessor;
     ZyrinLookAndFeel customLookAndFeel;
+    
+    juce::Path scopePath;
+    float lastPulsePhase = 0.0f;
+    juce::Rectangle<int> bypassBounds;
     
     juce::TextEditor valueEditor;
     juce::Slider* currentlyEditedSlider = nullptr;

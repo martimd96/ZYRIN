@@ -20,6 +20,14 @@ target_compile_definitions(ZYRIN PUBLIC
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
+# Add the BinaryData target for our custom fonts
+juce_add_binary_data(ZyrinAssets
+    HEADER_NAME "ZyrinAssets.h"
+    NAMESPACE ZyrinAssets
+    SOURCES
+        Assets/Orbitron.ttf
+)
+
 # lista todos os ficheiros de codigo que vao ser compilados
 target_sources(ZYRIN PRIVATE
     PluginProcessor.cpp
@@ -33,4 +41,5 @@ target_link_libraries(ZYRIN PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
+    ZyrinAssets
 )

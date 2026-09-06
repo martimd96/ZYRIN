@@ -11,6 +11,7 @@ public:
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorValueTreeState apvts;
+    std::atomic<float> currentPulsePhase { 0.0f };
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -72,6 +73,14 @@ private:
 
     bool wasInstant = false;
     double instantDelaySamples = 0.0;
+
+public:
+    static constexpr int scopeSize = 512;
+    std::atomic<float> scopeData[512];
+    std::atomic<int> scopePos { 0 };
+    std::atomic<bool> isDawPlaying { false };
+private:
+    int downsampleCounter = 0;
 
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 

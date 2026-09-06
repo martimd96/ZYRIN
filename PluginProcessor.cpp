@@ -224,6 +224,14 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         }
     }
     
+    if (isPlaying) {
+        double phase = std::fmod(ppqPosition * speed, 1.0);
+        if (phase < 0.0) phase += 1.0;
+        currentPulsePhase.store(static_cast<float>(phase), std::memory_order_relaxed);
+    } else {
+        currentPulsePhase.store(0.0f, std::memory_order_relaxed);
+    }
+    
     double beatsPerSample = currentBpm / (60.0 * sampleRate);
     double fadeBeats = fadeSamples * beatsPerSample;
 
@@ -376,10 +384,22 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
 
             float effectiveMix = currentMix * transportFade;
             outputData[sample] = inputSample * (1.0f - effectiveMix) + wetSample * effectiveMix;
+
+            // record oscilloscope data (downsampled, left channel only)
+            if (channel == 0) {
+                if (++downsampleCounter >= 64) {
+                    downsampleCounter = 0;
+                    int pos = scopePos.load(std::memory_order_relaxed);
+                    scopeData[pos].store(outputData[sample], std::memory_order_relaxed);
+                    scopePos.store((pos + 1) % scopeSize, std::memory_order_relaxed);
+                }
+            }
         }
         writePosition = (writePosition + 1) % bufferLength;
         pitchWritePos = (pitchWritePos + 1) % pitchBuffer.getNumSamples();
     }
+    
+    isDawPlaying.store(isPlaying, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* ZyrinProcessor::createEditor() {

@@ -394,18 +394,32 @@ void ZyrinEditor::timerCallback() {
     customLookAndFeel.currentPulsePhase = audioProcessor.currentPulsePhase.load(std::memory_order_relaxed);
     customLookAndFeel.isDawPlaying = audioProcessor.isDawPlaying.load(std::memory_order_relaxed);
     
+    int numReady = audioProcessor.scopeFifo.getNumReady();
+    if (numReady > 0) {
+        int start1, block1, start2, block2;
+        audioProcessor.scopeFifo.prepareToRead (numReady, start1, block1, start2, block2);
+        for (int i = 0; i < block1; ++i) {
+            localScopeBuffer[localScopePos] = audioProcessor.scopeBuffer[start1 + i];
+            localScopePos = (localScopePos + 1) % audioProcessor.scopeSize;
+        }
+        for (int i = 0; i < block2; ++i) {
+            localScopeBuffer[localScopePos] = audioProcessor.scopeBuffer[start2 + i];
+            localScopePos = (localScopePos + 1) % audioProcessor.scopeSize;
+        }
+        audioProcessor.scopeFifo.finishedRead (block1 + block2);
+    }
+
     float currentPhase = customLookAndFeel.currentPulsePhase;
     float midY = smoothSlider.getBottom() + 46.0f;
     scopeBounds = juce::Rectangle<int>(0, static_cast<int>(midY) - 50, getWidth(), 100);
     
     if (currentPhase < lastPulsePhase || cachedScopeImage.isNull()) {
         scopePath.clear();
-        int pos = audioProcessor.scopePos.load(std::memory_order_relaxed);
         float width = getWidth();
         
         for (int i = 0; i < audioProcessor.scopeSize; ++i) {
-            int readPos = (pos + i) % audioProcessor.scopeSize;
-            float val = audioProcessor.scopeData[readPos].load(std::memory_order_relaxed);
+            int readPos = (localScopePos + i) % audioProcessor.scopeSize;
+            float val = localScopeBuffer[readPos];
             float x = (float)i / (audioProcessor.scopeSize - 1) * width;
             float y = midY - val * 45.0f; 
             

@@ -28,6 +28,8 @@ public:
     void changeProgramName(int, const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
+    
+    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
 
 private:
     juce::AudioBuffer<float> circularBuffer;
@@ -79,8 +81,8 @@ private:
 
 public:
     static constexpr int scopeSize = 512;
-    std::atomic<float> scopeData[512] {};
-    std::atomic<int> scopePos { 0 };
+    juce::AbstractFifo scopeFifo { scopeSize };
+    std::array<float, scopeSize> scopeBuffer {};
     std::atomic<bool> isDawPlaying { false };
 private:
     int downsampleCounter = 0;

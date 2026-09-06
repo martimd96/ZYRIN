@@ -89,6 +89,14 @@ ZyrinProcessor::ZyrinProcessor()
 
 ZyrinProcessor::~ZyrinProcessor() {}
 
+bool ZyrinProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+    return true;
+}
+
 void ZyrinProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     // 96 seconds of buffer is enough to store 8 bars at 20 BPM
     int bufferLength = static_cast<int>(sampleRate * 96.0); 
@@ -230,6 +238,8 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         }
     }
     
+    if (currentBpm <= 0.0) currentBpm = 120.0;
+    
     if (isPlaying) {
         double phase = std::fmod(ppqPosition * speed, 1.0);
         if (phase < 0.0) phase += 1.0;
@@ -239,10 +249,16 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     }
     
     double beatsPerSample = currentBpm / (60.0 * sampleRate);
+    double samplesPerBeat = 1.0 / beatsPerSample;
     double fadeBeats = fadeSamples * beatsPerSample;
+    double invFadeBeats = fadeBeats > 0.0 ? 1.0 / fadeBeats : 0.0;
     
     double loopPhase = std::fmod(ppqPosition, loopLengthBeats);
     if (loopPhase < 0.0) loopPhase += loopLengthBeats;
+
+    // Hoist block-rate divisions
+    float blockDrive = driveParam->load();
+    float blockDriveCompensation = 1.0f / (1.0f + (blockDrive - 1.0f) * 0.15f);
 
     for (int sample = 0; sample < numSamples; ++sample) {
         if (isPlaying && sample > 0) {
@@ -255,11 +271,11 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         float R = smoothedRatio.getNextValue();
         
         double delayDelta = 1.0 - R;
-        float driveCompensation = 1.0f / (1.0f + (currentDrive - 1.0f) * 0.15f);
 
         // update pitch shift phase dynamically handles grain size shrinking
         double currentGrainSizeMs = smoothedGrainSize.getNextValue();
         double pitchWindowSamples = currentGrainSizeMs * 0.001 * sampleRate;
+        double invPitchWindowSamples = 1.0 / pitchWindowSamples;
         
         pitchDelayAccum += delayDelta;
         while (pitchDelayAccum >= pitchWindowSamples) pitchDelayAccum -= pitchWindowSamples;
@@ -274,8 +290,8 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             return hannWindowTable[index];
         };
         
-        double p1 = delay1 / pitchWindowSamples;
-        double p2 = delay2 / pitchWindowSamples;
+        double p1 = delay1 * invPitchWindowSamples;
+        double p2 = delay2 * invPitchWindowSamples;
         double w1 = getHannWindow(p1);
         double w2 = getHannWindow(p2);
 
@@ -293,7 +309,7 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         if (reverseModeChoice == 2) { 
             // instant mode
             if (!wasInstant) {
-                instantDelaySamples = (loopPhase * delayRatio) / beatsPerSample;
+                instantDelaySamples = (loopPhase * delayRatio) * samplesPerBeat;
                 wasInstant = true;
             }
             instantDelaySamples += (1.0 + speed);
@@ -309,21 +325,21 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
                 double delayBeatsNew = loopPhase * syncRatio;
                 double delayBeatsOld = (loopPhase + loopLengthBeats) * syncRatio;
                 
-                delaySamplesNew = delayBeatsNew / beatsPerSample;
-                delaySamplesOld = delayBeatsOld / beatsPerSample;
+                delaySamplesNew = delayBeatsNew * samplesPerBeat;
+                delaySamplesOld = delayBeatsOld * samplesPerBeat;
             } else { 
                 // off mode
                 double delayBeatsNew = loopPhase * delayRatio;
                 double delayBeatsOld = (loopPhase + loopLengthBeats) * delayRatio;
                 
-                delaySamplesNew = delayBeatsNew / beatsPerSample;
-                delaySamplesOld = delayBeatsOld / beatsPerSample;
+                delaySamplesNew = delayBeatsNew * samplesPerBeat;
+                delaySamplesOld = delayBeatsOld * samplesPerBeat;
             }
         }
 
         float fade = 1.0f;
         if (loopPhase < fadeBeats && fadeBeats > 0.0) {
-            fade = static_cast<float>(loopPhase / fadeBeats);
+            fade = static_cast<float>(loopPhase * invFadeBeats);
         }
 
         for (int channel = 0; channel < totalNumInputChannels; ++channel) {
@@ -388,7 +404,7 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
 
             wetSample *= currentDrive;
             wetSample = juce::dsp::FastMathApproximations::tanh(wetSample);
-            wetSample *= driveCompensation;
+            wetSample *= blockDriveCompensation;
 
             float reconstructedDry = lowAligned + mid + high;
             float effectiveMix = currentMix * transportFade;
@@ -398,9 +414,13 @@ void ZyrinProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             if (channel == 0) {
                 if (++downsampleCounter >= 64) {
                     downsampleCounter = 0;
-                    int pos = scopePos.load(std::memory_order_relaxed);
-                    scopeData[pos].store(outputData[sample], std::memory_order_relaxed);
-                    scopePos.store((pos + 1) % scopeSize, std::memory_order_relaxed);
+                    if (scopeFifo.getFreeSpace() > 0) {
+                        int start1, block1, start2, block2;
+                        scopeFifo.prepareToWrite(1, start1, block1, start2, block2);
+                        if (block1 > 0) scopeBuffer[start1] = outputData[sample];
+                        else if (block2 > 0) scopeBuffer[start2] = outputData[sample];
+                        scopeFifo.finishedWrite(block1 + block2);
+                    }
                 }
             }
         }

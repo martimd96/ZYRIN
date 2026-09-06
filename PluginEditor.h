@@ -75,6 +75,9 @@ private:
     juce::Rectangle<int> bypassBounds;
     juce::Rectangle<int> scopeBounds;
     
+    std::array<float, ZyrinProcessor::scopeSize> localScopeBuffer {};
+    int localScopePos = 0;
+    
     juce::TextEditor valueEditor;
     juce::Slider* currentlyEditedSlider = nullptr;
     bool editingLowBand = false;

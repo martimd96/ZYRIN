@@ -19,7 +19,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout ZyrinProcessor::createParame
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("smooth", 1), "Smooth",
-        juce::NormalisableRange<float>(5.0f, 50.0f, 0.1f), 20.0f));
+        juce::NormalisableRange<float>(0.0f, 500.0f, 0.1f), 10.0f));
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("bandLow", 1), "Band Low",

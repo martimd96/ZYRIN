@@ -30,25 +30,59 @@ void ZyrinLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int wid
 
 void ZyrinLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float sliderPos,
                                         float minSliderPos, float maxSliderPos, const juce::Slider::SliderStyle style, juce::Slider& slider) {
-    auto trackY = (float) y + (float) height * 0.5f - 4.0f;
-    auto trackHeight = 8.0f;
-
-    // Background Track
-    g.setColour(juce::Colour(0xff1e1e26));
-    g.fillRect(juce::Rectangle<float>((float)x, trackY, (float)width, trackHeight));
-
     if (style == juce::Slider::TwoValueHorizontal) {
+        auto trackHeight = 4.0f; // Slimmer track for futuristic look
+        auto trackY = (float) y + 10.0f; 
+
+        // Background Track
+        g.setColour(juce::Colour(0xff1e1e26));
+        g.fillRect(juce::Rectangle<float>((float)x, trackY, (float)width, trackHeight));
+
         // Active Band Fill
         g.setColour(juce::Colour(0xff9d4edd));
         g.fillRect(juce::Rectangle<float>(minSliderPos, trackY, maxSliderPos - minSliderPos, trackHeight));
 
         // Thumbs
         g.setColour(juce::Colours::white);
-        auto thumbHeight = 16.0f;
-        auto thumbY = (float) y + ((float) height - thumbHeight) * 0.5f;
-        g.fillRect(juce::Rectangle<float>(minSliderPos - 2.0f, thumbY, 4.0f, thumbHeight));
-        g.fillRect(juce::Rectangle<float>(maxSliderPos - 2.0f, thumbY, 4.0f, thumbHeight));
+        auto thumbHeight = 12.0f;
+        auto thumbY = trackY - (thumbHeight - trackHeight) * 0.5f;
+        g.fillRect(juce::Rectangle<float>(minSliderPos - 1.5f, thumbY, 3.0f, thumbHeight));
+        g.fillRect(juce::Rectangle<float>(maxSliderPos - 1.5f, thumbY, 3.0f, thumbHeight));
+
+        // Dynamic Frequency Labels (discrete, floating)
+        g.setColour(juce::Colour(0xff8a8a9a)); // slightly darker grey for discretion
+        g.setFont(juce::Font(10.0f).withStyle(juce::Font::bold));
+        
+        juce::String lowText = juce::String(slider.getMinValue(), 0);
+        juce::String highText = juce::String(slider.getMaxValue(), 0);
+        
+        // Clamp to prevent drawing outside bounds
+        float textW = 30.0f;
+        float lowX = juce::jmax(0.0f, minSliderPos - textW * 0.5f);
+        float highX = juce::jmin((float)width - textW, maxSliderPos - textW * 0.5f);
+        
+        // Prevent overlap
+        if (highX < lowX + textW + 4.0f) {
+            float mid = (minSliderPos + maxSliderPos) * 0.5f;
+            lowX = mid - textW - 2.0f;
+            highX = mid + 2.0f;
+            
+            // Adjust bounds check for overlap case
+            if (lowX < 0.0f) { lowX = 0.0f; highX = textW + 4.0f; }
+            if (highX > width - textW) { highX = width - textW; lowX = highX - textW - 4.0f; }
+        }
+
+        g.drawText(lowText, (int)lowX, (int)(thumbY + thumbHeight + 2.0f), (int)textW, 12, juce::Justification::centred, false);
+        g.drawText(highText, (int)highX, (int)(thumbY + thumbHeight + 2.0f), (int)textW, 12, juce::Justification::centred, false);
+
     } else {
+        auto trackY = (float) y + (float) height * 0.5f - 4.0f;
+        auto trackHeight = 8.0f;
+
+        // Background Track
+        g.setColour(juce::Colour(0xff1e1e26));
+        g.fillRect(juce::Rectangle<float>((float)x, trackY, (float)width, trackHeight));
+
         // Normal linear slider handling (fade in/out, smooth)
         g.setColour(juce::Colour(0xff9d4edd));
         g.fillRect(juce::Rectangle<float>((float)x, trackY, sliderPos - (float)x, trackHeight));
@@ -240,6 +274,44 @@ ZyrinEditor::ZyrinEditor (ZyrinProcessor& p)
     bypassButton.setButtonText("");
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(audioProcessor.apvts, "bypass", bypassButton);
 
+    // Setup TextEditor for double-click input
+    valueEditor.setMultiLine(false);
+    valueEditor.setReturnKeyStartsNewLine(false);
+    valueEditor.setReadOnly(false);
+    valueEditor.setScrollbarsShown(false);
+    valueEditor.setCaretVisible(true);
+    valueEditor.setPopupMenuEnabled(false);
+    valueEditor.setJustification(juce::Justification::centred);
+    valueEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff1e1e26));
+    valueEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff9d4edd));
+    valueEditor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    
+    valueEditor.onReturnKey = [this]() {
+        if (currentlyEditedSlider != nullptr) {
+            float newValue = valueEditor.getText().getFloatValue();
+            if (currentlyEditedSlider == &bandSlider) {
+                if (editingLowBand) currentlyEditedSlider->setMinValue(newValue, juce::sendNotificationSync);
+                else                currentlyEditedSlider->setMaxValue(newValue, juce::sendNotificationSync);
+            } else {
+                currentlyEditedSlider->setValue(newValue, juce::sendNotificationSync);
+            }
+        }
+        valueEditor.setVisible(false);
+    };
+    
+    valueEditor.onFocusLost = [this]() { valueEditor.setVisible(false); };
+    addChildComponent(valueEditor); // Hidden by default
+
+    // Add mouse listeners for double-click
+    mixSlider.addMouseListener(this, false);
+    pitchSlider.addMouseListener(this, false);
+    grainSlider.addMouseListener(this, false);
+    driveSlider.addMouseListener(this, false);
+    smoothSlider.addMouseListener(this, false);
+    bypassFadeInSlider.addMouseListener(this, false);
+    bypassFadeOutSlider.addMouseListener(this, false);
+    bandSlider.addMouseListener(this, false);
+
     setSize (600, 450);
 }
 
@@ -327,7 +399,40 @@ void ZyrinEditor::resized() {
 
     // Bottom Span: Band Split slider
     int bandW = getWidth() - 100;
-    int bandH = 24;
-    int bandY = getHeight() - 50;
+    int bandH = 40;
+    int bandY = getHeight() - 55;
     bandSlider.setBounds(50, bandY, bandW, bandH);
+}
+
+void ZyrinEditor::mouseDoubleClick (const juce::MouseEvent& event) {
+    auto* slider = dynamic_cast<juce::Slider*>(event.originalComponent);
+    if (slider == nullptr) return;
+
+    currentlyEditedSlider = slider;
+    
+    // Determine bounds for the text editor overlay
+    int editorW = 60;
+    int editorH = 24;
+    juce::Rectangle<int> editorBounds;
+
+    if (slider == &bandSlider) {
+        editingLowBand = event.x < bandSlider.getWidth() / 2;
+        float currentVal = editingLowBand ? (float)slider->getMinValue() : (float)slider->getMaxValue();
+        valueEditor.setText(juce::String(currentVal, 2)); // 2 decimal places max
+        
+        // Position over the respective thumb area roughly
+        int cx = event.x + bandSlider.getX();
+        int cy = bandSlider.getY() + bandSlider.getHeight() / 2;
+        editorBounds = juce::Rectangle<int>(cx - editorW/2, cy - editorH/2, editorW, editorH);
+    } else {
+        valueEditor.setText(juce::String(slider->getValue(), 2));
+        
+        int cx = slider->getX() + slider->getWidth() / 2;
+        int cy = slider->getY() + slider->getHeight() / 2;
+        editorBounds = juce::Rectangle<int>(cx - editorW/2, cy - editorH/2, editorW, editorH);
+    }
+
+    valueEditor.setBounds(editorBounds);
+    valueEditor.setVisible(true);
+    valueEditor.grabKeyboardFocus();
 }

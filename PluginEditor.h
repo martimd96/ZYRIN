@@ -44,10 +44,15 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDoubleClick (const juce::MouseEvent& event) override;
 
 private:
     ZyrinProcessor& audioProcessor;
     ZyrinLookAndFeel customLookAndFeel;
+    
+    juce::TextEditor valueEditor;
+    juce::Slider* currentlyEditedSlider = nullptr;
+    bool editingLowBand = false;
     
     juce::ComboBox loopLengthBox;
     juce::ComboBox modeBox;

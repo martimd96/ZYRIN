@@ -1,15 +1,17 @@
 cmake_minimum_required(VERSION 3.20)
 project(ZYRIN VERSION 1.0.0)
 
-add_subdirectory("D:/PROGRAMAS/Dev/JUCE" juce)
+# Define the path to JUCE. Users can override this via command line (e.g., -DJUCE_PATH=/path/to/JUCE)
+set(JUCE_PATH "JUCE" CACHE PATH "Path to the JUCE framework")
+add_subdirectory(${JUCE_PATH} juce)
 
-# define as informacoes essenciais do plugin para a daw ler
+# Defines essential plugin information for the DAW to read
 juce_add_plugin(ZYRIN
     COMPANY_NAME "Prod. Carcyl"
     BUNDLE_ID "com.ProdCarcyl.ZYRIN"
     PLUGIN_MANUFACTURER_CODE "PrCr"
     PLUGIN_CODE "Zyrn"
-    FORMATS VST3 Standalone
+    FORMATS VST3 AU Standalone
     PRODUCT_NAME "ZYRIN"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
@@ -32,7 +34,7 @@ juce_add_binary_data(ZyrinAssets
         Assets/Orbitron.ttf
 )
 
-# lista todos os ficheiros de codigo que vao ser compilados
+# Lists all source code files to be compiled
 target_sources(ZYRIN PRIVATE
     PluginProcessor.cpp
     PluginProcessor.h
@@ -40,7 +42,7 @@ target_sources(ZYRIN PRIVATE
     PluginEditor.h
 )
 
-# liga o projeto as bibliotecas basicas de audio e interface
+# Links the project to the essential audio and UI libraries
 target_link_libraries(ZYRIN PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors

@@ -24,9 +24,9 @@ ZYRIN uses CMake for its build system. To configure and build the plugin from so
    ```bash
    python scripts/fetch_assets.py
    ```
-3. Configure the CMake project:
+3. Configure the CMake project (point `-DJUCE_PATH` to your JUCE directory):
    ```bash
-   cmake -B build
+   cmake -B build -DJUCE_PATH="/path/to/JUCE"
    ```
 4. Build the plugin:
    ```bash
